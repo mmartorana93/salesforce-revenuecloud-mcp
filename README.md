@@ -27,10 +27,10 @@ From a local checkout:
 python3 -m pip install .
 ```
 
-From GitHub after the repository is published:
+From GitHub:
 
 ```bash
-python3 -m pip install "git+https://github.com/<owner>/revenuecloud-mcp.git"
+python3 -m pip install "git+https://github.com/mmartorana93/salesforce-revenuecloud-mcp.git"
 ```
 
 You can also run directly from the source checkout:
