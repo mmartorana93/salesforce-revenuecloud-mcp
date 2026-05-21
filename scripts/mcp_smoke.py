@@ -80,6 +80,39 @@ def main():
             "processConsumptionOverages",
             "salesforce_rest_request",
             "soql_query",
+            # New tools
+            "hydrate_pricing_context",
+            "place_sales_transaction",
+            "assign_revenue_cloud_usage",
+            "cpq_configure",
+            "cpq_load_instance",
+            "cpq_save_instance",
+            "cpq_set_product_quantity",
+            "cpq_add_nodes",
+            "cpq_update_nodes",
+            "cpq_delete_nodes",
+            "decomposeSalesTransaction",
+            "orchestrateSalesTransaction",
+            "orchestrateTransaction",
+            "submitSalesTransaction",
+            "freezeSalesTransaction",
+            "unfreezeSalesTransaction",
+            "runSalesforceHeadlessPricing",
+            "invokeSummaryCreationService",
+            "refreshUsageEntitlementBucket",
+            "retriggerEntlCreaProc",
+            "cancelApprovalSubmission",
+            "recallApprovalSubmission",
+            "reviewApprovalWorkItem",
+            "overrideApprovalWorkItem",
+            "reassignApprovalWorkItem",
+            "applyPaymentsAndCreditsByRules",
+            "blngSvcSuspendBilling",
+            "blngSvcExtendInvoiceDueDate",
+            "createInvoiceFromFulfillmentOrder",
+            "postDraftInvoice",
+            "applyPayment",
+            "writeOffInvoices",
         }
         missing = sorted(required - names)
         assert not missing, missing
@@ -119,6 +152,48 @@ def main():
         assert "createContract" in filtered_names
         assert "initiateRenewal" not in filtered_names
         assert len(filtered_names) < len(tools)
+    finally:
+        proc.kill()
+        proc.wait()
+
+    # Test domain-aware toolsets: billing should expose Billing+Payments actions only
+    proc = start_server(["--toolsets", "billing"])
+    try:
+        rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        billing = {t["name"] for t in rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["tools"]}
+        assert "postDraftInvoice" in billing
+        assert "applyPayment" in billing
+        assert "blngSvcSuspendBilling" in billing
+        assert "createOrderFromQuote" not in billing
+        assert "soql_query" not in billing
+    finally:
+        proc.kill()
+        proc.wait()
+
+    # Test toolset 'context' exposes the new Connect tools
+    proc = start_server(["--toolsets", "context"])
+    try:
+        rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        ctx_tools = {t["name"] for t in rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["tools"]}
+        assert "hydrate_pricing_context" in ctx_tools
+        assert "place_sales_transaction" in ctx_tools
+        assert "assign_revenue_cloud_usage" in ctx_tools
+        assert "postDraftInvoice" not in ctx_tools
+    finally:
+        proc.kill()
+        proc.wait()
+
+    # Test productDataInputs alias normalization in invoke_revenue_cloud_action
+    # We don't actually contact Salesforce, just verify the alias path doesn't crash on shape.
+    proc = start_server()
+    try:
+        rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        # Just verify the tool exposes 'productData' in its schema
+        tools_resp = rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["tools"]
+        gmpd = next(t for t in tools_resp if t["name"] == "getMultipleProductDetails")
+        props = gmpd["inputSchema"]["properties"]
+        assert "productData" in props, "schema should expose productData"
+        assert "productDataInputs" in props, "schema should expose productDataInputs alias"
     finally:
         proc.kill()
         proc.wait()

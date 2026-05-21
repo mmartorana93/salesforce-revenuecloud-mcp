@@ -78,32 +78,34 @@ set `SALESFORCE_TARGET_ORG` or `SF_TARGET_ORG`.
 
 ## Toolset Filtering
 
-By default the server registers all 28 tools. To reduce LLM context, restrict
-the tools that are exposed via flags or env vars.
+By default the server registers all tools. To reduce LLM context, restrict the
+tools that are exposed via flags or env vars.
 
 CLI flags (passed in `args`):
 
-- `--toolsets <list>`: comma-separated subset from `core`, `actions`,
-  `diagnostics`, `data`, `all`. `core` is always enabled. Specific toolsets
-  enable: `actions` -> all action tools + `invoke_revenue_cloud_action`,
-  `diagnostics` -> validation/readiness tools, `data` -> `soql_query` and
-  `salesforce_rest_request`.
-- `--tools <list>`: comma-separated tool names enabled in addition to any
-  toolsets. Useful to enable a single tool without its whole toolset.
+- `--toolsets <list>`: comma-separated. `core` is always implicit. Recognized:
+  - `actions` — every Revenue Cloud standard action plus `invoke_revenue_cloud_action`.
+  - `diagnostics` — `validate_revenue_cloud_actions`, `list_available_standard_actions`, `revenue_cloud_org_readiness`.
+  - `data` — `soql_query`, `salesforce_rest_request`.
+  - `context` — `hydrate_pricing_context`, `place_sales_transaction`, `assign_revenue_cloud_usage`.
+  - `cpq_headless` — Configurator REST tools plus pricing/configurator actions.
+  - Domain-aware groups (filter actions by registry `domain`): `billing`, `orders`, `approvals`, `assets`, `catalog`, `pricing`, `usage`.
+  - `all` — every tool.
+- `--tools <list>`: comma-separated tool names enabled in addition to any toolsets.
 
 Environment variables (used when the matching CLI flag is omitted):
 
 - `REVENUECLOUD_TOOLSETS`
 - `REVENUECLOUD_TOOLS`
 
-Example: only data + diagnostics, plus the `createOrderFromQuote` action:
+Example: only billing + diagnostics, plus the bootstrap context helpers:
 
 ```json
 {
   "mcpServers": {
     "revenuecloud": {
       "command": "revenuecloud-mcp",
-      "args": ["--toolsets", "diagnostics,data", "--tools", "createOrderFromQuote"]
+      "args": ["--toolsets", "billing,diagnostics,context"]
     }
   }
 }
@@ -150,36 +152,63 @@ Token-based auth is also supported with `SF_ACCESS_TOKEN` or
 
 ## Tool Coverage
 
-Specific Revenue Cloud action tools:
+### Transaction Management & Assets
+`createContract`, `createOrderFromQuote`, `createOrdersFromQuote`,
+`createOrUpdateAssetFromOrder`, `createOrUpdateAssetFromOrderItem`,
+`getRenewableAssetsSummary`, `initiateAmendment`, `initiateCancellation`,
+`initiateRenewal`, `initiateRollBackLastAction`, `initiateTransfer`,
+`createServiceDocument`.
 
-- `createContract`
-- `createOrderFromQuote`
-- `createOrdersFromQuote`
-- `createOrUpdateAssetFromOrder`
-- `createOrUpdateAssetFromOrderItem`
-- `getRenewableAssetsSummary`
-- `initiateAmendment`
-- `initiateCancellation`
-- `initiateRenewal`
-- `initiateRollBackLastAction`
-- `initiateTransfer`
-- `executeQualificationProcedure`
-- `getMultipleProductDetails`
-- `runSalesforcePricing`
-- `runConfigRules`
-- `invokeRatingService`
-- `rateUsageRecords`
-- `processConsumptionOverages`
-- `createServiceDocument`
+### Orders / Orchestration (v66+)
+`decomposeSalesTransaction`, `orchestrateSalesTransaction`, `orchestrateTransaction`,
+`submitSalesTransaction`, `freezeSalesTransaction` (v67), `unfreezeSalesTransaction` (v67).
 
-Generic tools:
+### Catalog / CPQ / Pricing
+`executeQualificationProcedure`, `getMultipleProductDetails`,
+`runSalesforcePricing`, `runConfigRules`, `runSalesforceHeadlessPricing`,
+`invokeSummaryCreationService`.
 
-- `invoke_revenue_cloud_action`: invoke any Salesforce standard action with raw `inputs`.
-- `salesforce_rest_request`: call any `/services/data` REST API path.
-- `soql_query`: query org data through REST.
-- `validate_revenue_cloud_actions`: non-mutating GET validation for every registered action endpoint.
-- `list_available_standard_actions`: list action endpoints exposed by the target org.
-- `revenue_cloud_org_readiness`: compare registered action coverage with the target org's exposed actions and assigned Revenue Cloud permission sets/licenses.
+### Approvals
+`cancelApprovalSubmission`, `recallApprovalSubmission`, `reviewApprovalWorkItem`,
+`overrideApprovalWorkItem`, `reassignApprovalWorkItem`, `getPreviousRelaRecDetails`.
+
+### Usage & Rating
+`invokeRatingService`, `rateUsageRecords`, `processConsumptionOverages`,
+`refreshUsageEntitlementBucket`, `retriggerEntlCreaProc`.
+
+### Billing & Payments
+General-availability: `applyPaymentsAndCreditsByRules`,
+`blngSvcExtendInvoiceDueDate`, `blngSvcSuspendBilling`, `blngSvcUpdateBillToContact`,
+`createInvoiceFromChangeOrders`, `createInvoiceFromFulfillmentOrder`.
+Requires Salesforce Billing license + v67.0: `postDraftInvoice`,
+`postDraftInvoiceBatchRun`, `postDraftCreditMemo`, `voidPostedCreditMemo`,
+`generateInvoiceDocuments`, `applyCredit`, `applyPayment`, `unapplyPayment`,
+`unapplyCredit`, `paymentSale`, `writeOffInvoices`, `generateAccountStatement`,
+`createBillingSchedulesFromBillingTransaction`, `recoverBillingSchedules`.
+
+### Context bootstrap (Connect REST)
+- `hydrate_pricing_context` — POST `/connect/core-pricing/pricing` to attach a
+  Revenue Cloud `ContextDefinition` to a Quote/Order and return its
+  `contextInstanceId` (use it to feed `runSalesforcePricing` and other tools
+  that fail with `NO_CONTEXT_RUNTIME_FOUND` on raw standard records).
+- `place_sales_transaction` — POST `/connect/rev/sales-transaction/actions/place`
+  to place + price + decompose a sales transaction in one call.
+- `assign_revenue_cloud_usage` — INSERT `AppUsageAssignment` to mark a record
+  as `RevenueLifecycleManagement`. Required to unlock asset lifecycle (amend,
+  cancel, transfer) on orders that were created without the RLM flag.
+
+### Headless Configurator (CPQ)
+`cpq_configure`, `cpq_load_instance`, `cpq_save_instance`,
+`cpq_set_product_quantity`, `cpq_add_nodes`, `cpq_update_nodes`,
+`cpq_delete_nodes` — wrappers over `/connect/cpq/configurator/actions/*`.
+
+### Generic / diagnostics
+- `invoke_revenue_cloud_action` — invoke any Salesforce standard action with raw `inputs`.
+- `salesforce_rest_request` — call any `/services/data` REST API path.
+- `soql_query` — query org data through REST.
+- `validate_revenue_cloud_actions` — non-mutating GET validation for every registered action endpoint.
+- `list_available_standard_actions` — list action endpoints exposed by the target org.
+- `revenue_cloud_org_readiness` — compare registered action coverage with the target org's exposed actions and assigned Revenue Cloud permission sets/licenses.
 
 Specific action tools accept one of these shapes:
 

@@ -44,6 +44,53 @@ SAMPLES = {
     "rateUsageRecords": {"recordID": "56jxx0000000001", "contextDefinitionId": "11Oxx0000000001"},
     "processConsumptionOverages": {"usageRatableSummaryId": "3ttxx0000000001"},
     "createServiceDocument": {"recordId": "0WOxx0000000001", "templateId": "0M0xx0000000001"},
+    # Orders / Orchestration
+    "decomposeSalesTransaction": {"salesTransactionId": "0Q0xx0000000001", "fulfillmentAdapter": "default"},
+    "orchestrateSalesTransaction": {"salesTransactionId": "0Q0xx0000000001", "fulfillmentAdapter": "default"},
+    "orchestrateTransaction": {"transactionId": "0Q0xx0000000001", "orchestrationType": "Default"},
+    "submitSalesTransaction": {"salesTransactionId": "0Q0xx0000000001"},
+    "freezeSalesTransaction": {"salesTransactionId": "0Q0xx0000000001"},
+    "unfreezeSalesTransaction": {"salesTransactionId": "0Q0xx0000000001"},
+    # CPQ / Pricing extras
+    "runSalesforceHeadlessPricing": {
+        "contextDefinitionId": "1cdxx0000000001",
+        "contextMappingId": "1cmxx0000000001",
+        "pricingProcedureId": "1ppxx0000000001",
+        "pricingData": "{}",
+    },
+    # Usage entitlements
+    "invokeSummaryCreationService": {"usageEntitlementAccountId": "001xx0000000001"},
+    "refreshUsageEntitlementBucket": {"transactionUsageEntitlementId": "0tuxx0000000001"},
+    "retriggerEntlCreaProc": {"assetId": "02ixx0000000001"},
+    # Approvals
+    "cancelApprovalSubmission": {"approvalSubmissionId": "0a8xx0000000001"},
+    "recallApprovalSubmission": {"approvalSubmissionId": "0a8xx0000000001"},
+    "reviewApprovalWorkItem": {"approvalWorkItemId": "0a9xx0000000001", "approvalDecision": "Approve"},
+    "overrideApprovalWorkItem": {"approvalWorkItemId": "0a9xx0000000001", "approvalDecision": "Approve"},
+    "reassignApprovalWorkItem": {"approvalWorkItemId": "0a9xx0000000001", "assigneeId": "005xx0000000001"},
+    "getPreviousRelaRecDetails": {"flowOrchestrationInstanceId": "0i1xx0000000001", "stepApiNamesList": ["Step1"]},
+    # Billing v66.x
+    "applyPaymentsAndCreditsByRules": {"accountId": "001xx0000000001"},
+    "blngSvcExtendInvoiceDueDate": {"invoiceId": "0KCxx0000000001", "revisedDueDateTime": "2026-01-01"},
+    "blngSvcSuspendBilling": {"accountId": "001xx0000000001", "suspensionDate": "2026-01-01", "resumptionDate": "2026-02-01"},
+    "blngSvcUpdateBillToContact": {"invoiceId": "0KCxx0000000001", "newBillToContactId": "003xx0000000001"},
+    "createInvoiceFromChangeOrders": {"createInvoiceFromChangeOrdersInput": {"changeOrderIds": ["801xx0000000001"]}},
+    "createInvoiceFromFulfillmentOrder": {"fulfillmentOrderId": "0a4xx0000000001"},
+    # Billing v67.0
+    "postDraftInvoice": {"invoiceId": "0KCxx0000000001"},
+    "postDraftInvoiceBatchRun": {"invoiceBatchRunId": "0KIxx0000000001"},
+    "postDraftCreditMemo": {"creditMemoId": "0KExx0000000001"},
+    "voidPostedCreditMemo": {"creditMemoId": "0KExx0000000001"},
+    "generateInvoiceDocuments": {"invoiceIds": ["0KCxx0000000001"]},
+    "applyCredit": {"creditMemoId": "0KExx0000000001", "invoiceId": "0KCxx0000000001"},
+    "applyPayment": {"paymentId": "0KPxx0000000001", "invoiceId": "0KCxx0000000001"},
+    "unapplyPayment": {"paymentLineInvoiceId": "0KQxx0000000001"},
+    "unapplyCredit": {"creditMemoApplicationId": "0KFxx0000000001"},
+    "paymentSale": {"paymentMethodId": "0KMxx0000000001", "amount": 100.0},
+    "writeOffInvoices": {"invoiceIds": ["0KCxx0000000001"]},
+    "generateAccountStatement": {"accountId": "001xx0000000001"},
+    "createBillingSchedulesFromBillingTransaction": {"billingTransactionId": "0KTxx0000000001"},
+    "recoverBillingSchedules": {"billingScheduleIds": ["0KSxx0000000001"]},
 }
 
 

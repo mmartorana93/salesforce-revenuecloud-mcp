@@ -44,10 +44,12 @@ def base_salesforce_schema(extra):
 def tools_list(config=None):
     config = config or {}
     all_tools = _all_tools()
+    action_domains = {n: action_metadata(n).get("domain") for n in action_names()}
     enabled = resolve_enabled_tools(
         config,
         all_tool_names=[t["name"] for t in all_tools],
         action_tool_names=action_names(),
+        action_domains=action_domains,
     )
     return [t for t in all_tools if t["name"] in enabled]
 
@@ -136,6 +138,76 @@ def _all_tools():
                 }
             ),
         ),
+        tool(
+            "hydrate_pricing_context",
+            "Hydrate a Revenue Cloud pricing context for a Quote/Order via /connect/core-pricing/pricing. Returns a contextInstanceId usable by runSalesforcePricing and other tools.",
+            base_salesforce_schema(
+                {
+                    "context_definition_name": {"type": "string", "description": "Context definition developer name."},
+                    "record_id": {"type": "string", "description": "Quote, Order, or other transaction record id to hydrate."},
+                    "pricing_procedure_name": {"type": "string", "description": "Optional pricing procedure to run during hydration."},
+                    "context_mapping_name": {"type": "string"},
+                    "additional_body": {"type": "object", "description": "Extra fields merged into the POST body verbatim."},
+                }
+            ),
+        ),
+        tool(
+            "place_sales_transaction",
+            "Invoke /connect/rev/sales-transaction/actions/place to create or update a sales transaction with full context (place + price + decompose) in one call.",
+            base_salesforce_schema(
+                {
+                    "body": {"type": "object", "description": "Full request body for /connect/rev/sales-transaction/actions/place."},
+                }
+            ),
+        ),
+        tool(
+            "assign_revenue_cloud_usage",
+            "Mark a record (typically an Order) as Revenue Lifecycle Management by inserting an AppUsageAssignment.",
+            base_salesforce_schema(
+                {
+                    "record_id": {"type": "string", "description": "Id of the record to mark."},
+                    "app_usage_type": {
+                        "type": "string",
+                        "description": "AppUsageType value. Defaults to 'RevenueLifecycleManagement'.",
+                    },
+                }
+            ),
+        ),
+        tool(
+            "cpq_configure",
+            "Start a configurator session via /connect/cpq/configurator/actions/configure.",
+            base_salesforce_schema({"body": {"type": "object"}}),
+        ),
+        tool(
+            "cpq_load_instance",
+            "Load a previously saved configurator instance via /connect/cpq/configurator/actions/load-instance.",
+            base_salesforce_schema({"body": {"type": "object"}}),
+        ),
+        tool(
+            "cpq_save_instance",
+            "Save the current configurator instance via /connect/cpq/configurator/actions/save-instance.",
+            base_salesforce_schema({"body": {"type": "object"}}),
+        ),
+        tool(
+            "cpq_set_product_quantity",
+            "Set product quantity on the current configurator instance via /connect/cpq/configurator/actions/set-product-quantity.",
+            base_salesforce_schema({"body": {"type": "object"}}),
+        ),
+        tool(
+            "cpq_add_nodes",
+            "Add nodes (line items) on the current configurator instance via /connect/cpq/configurator/actions/add-nodes.",
+            base_salesforce_schema({"body": {"type": "object"}}),
+        ),
+        tool(
+            "cpq_update_nodes",
+            "Update nodes on the current configurator instance via /connect/cpq/configurator/actions/update-nodes.",
+            base_salesforce_schema({"body": {"type": "object"}}),
+        ),
+        tool(
+            "cpq_delete_nodes",
+            "Delete nodes from the current configurator instance via /connect/cpq/configurator/actions/delete-nodes.",
+            base_salesforce_schema({"body": {"type": "object"}}),
+        ),
     ]
     for name in action_names():
         meta = action_metadata(name)
@@ -143,17 +215,39 @@ def _all_tools():
     return tools
 
 
-def normalize_action_inputs(args):
+CPQ_CONFIGURATOR_ENDPOINTS = {
+    "cpq_configure": "configure",
+    "cpq_load_instance": "load-instance",
+    "cpq_save_instance": "save-instance",
+    "cpq_set_product_quantity": "set-product-quantity",
+    "cpq_add_nodes": "add-nodes",
+    "cpq_update_nodes": "update-nodes",
+    "cpq_delete_nodes": "delete-nodes",
+}
+
+
+def normalize_action_inputs(args, action_api_name=None):
     if args.get("inputs") is not None:
         if not isinstance(args["inputs"], list):
             raise ValueError("inputs must be an array of objects")
-        return args["inputs"]
-    if args.get("input") is not None:
+        items = args["inputs"]
+    elif args.get("input") is not None:
         if not isinstance(args["input"], dict):
             raise ValueError("input must be an object")
-        return [args["input"]]
-    direct = {k: v for k, v in args.items() if k not in CONTROL_FIELDS}
-    return [direct]
+        items = [args["input"]]
+    else:
+        items = [{k: v for k, v in args.items() if k not in CONTROL_FIELDS}]
+    return [_apply_input_aliases(item, action_api_name) for item in items]
+
+
+def _apply_input_aliases(item, action_api_name):
+    if not isinstance(item, dict):
+        return item
+    if action_api_name == "getMultipleProductDetails":
+        if "productDataInputs" in item and "productData" not in item:
+            item = dict(item)
+            item["productData"] = item.pop("productDataInputs")
+    return item
 
 
 def call_action_tool(name, args):
@@ -163,7 +257,7 @@ def call_action_tool(name, args):
     api_version = args.get("api_version")
     if args.get("validate_only"):
         return describe_action(api_name, target_org=target_org, api_version=api_version)
-    return invoke_action(api_name, normalize_action_inputs(args), target_org=target_org, api_version=api_version)
+    return invoke_action(api_name, normalize_action_inputs(args, api_name), target_org=target_org, api_version=api_version)
 
 
 def call_tool(name, args, config=None):
@@ -215,7 +309,7 @@ def call_tool(name, args, config=None):
             return describe_action(meta["api_name"], target_org=args.get("target_org"), api_version=args.get("api_version"))
         return invoke_action(
             meta["api_name"],
-            normalize_action_inputs(args),
+            normalize_action_inputs(args, meta["api_name"]),
             target_org=args.get("target_org"),
             api_version=args.get("api_version"),
         )
@@ -349,6 +443,50 @@ def call_tool(name, args, config=None):
             target_org=args.get("target_org"),
             api_version=args.get("api_version"),
             tooling=args.get("tooling", False),
+        )
+    if name == "hydrate_pricing_context":
+        body = dict(args.get("additional_body") or {})
+        if args.get("context_definition_name"):
+            body.setdefault("contextDefinitionName", args["context_definition_name"])
+        if args.get("record_id"):
+            body.setdefault("recordId", args["record_id"])
+        if args.get("pricing_procedure_name"):
+            body.setdefault("pricingProcedureName", args["pricing_procedure_name"])
+        if args.get("context_mapping_name"):
+            body.setdefault("contextMappingName", args["context_mapping_name"])
+        return rest_request(
+            "POST",
+            "connect/core-pricing/pricing",
+            body=body,
+            target_org=args.get("target_org"),
+            api_version=args.get("api_version"),
+        )
+    if name == "place_sales_transaction":
+        return rest_request(
+            "POST",
+            "connect/rev/sales-transaction/actions/place",
+            body=args.get("body") or {},
+            target_org=args.get("target_org"),
+            api_version=args.get("api_version"),
+        )
+    if name == "assign_revenue_cloud_usage":
+        return rest_request(
+            "POST",
+            "sobjects/AppUsageAssignment",
+            body={
+                "RecordId": args["record_id"],
+                "AppUsageType": args.get("app_usage_type") or "RevenueLifecycleManagement",
+            },
+            target_org=args.get("target_org"),
+            api_version=args.get("api_version"),
+        )
+    if name in CPQ_CONFIGURATOR_ENDPOINTS:
+        return rest_request(
+            "POST",
+            "connect/cpq/configurator/actions/" + CPQ_CONFIGURATOR_ENDPOINTS[name],
+            body=args.get("body") or {},
+            target_org=args.get("target_org"),
+            api_version=args.get("api_version"),
         )
     if name in ACTION_REGISTRY:
         return call_action_tool(name, args)

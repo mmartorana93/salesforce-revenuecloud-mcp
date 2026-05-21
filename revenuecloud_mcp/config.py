@@ -24,7 +24,54 @@ DIAGNOSTICS_TOOLS = frozenset(
 
 GENERIC_ACTION_TOOLS = frozenset({"invoke_revenue_cloud_action"})
 
-KNOWN_TOOLSETS = ("core", "actions", "diagnostics", "data", "all")
+CONTEXT_TOOLS = frozenset(
+    {
+        "hydrate_pricing_context",
+        "place_sales_transaction",
+        "assign_revenue_cloud_usage",
+    }
+)
+
+CPQ_HEADLESS_TOOLS = frozenset(
+    {
+        "cpq_configure",
+        "cpq_load_instance",
+        "cpq_save_instance",
+        "cpq_set_product_quantity",
+        "cpq_add_nodes",
+        "cpq_update_nodes",
+        "cpq_delete_nodes",
+    }
+)
+
+# Tool names that belong to a domain-specific toolset are derived from the
+# action registry by domain (see domain_toolset_filter).
+DOMAIN_TOOLSETS = {
+    "billing": {"Billing", "Payments"},
+    "orders": {"Orders", "Transaction Management"},
+    "approvals": {"Approvals"},
+    "assets": {"Transaction Management"},
+    "catalog": {"Product Catalog Management"},
+    "pricing": {"Salesforce Pricing", "Product Configurator"},
+    "usage": {"Usage Management", "Rate Management"},
+}
+
+KNOWN_TOOLSETS = (
+    "core",
+    "actions",
+    "diagnostics",
+    "data",
+    "context",
+    "cpq_headless",
+    "billing",
+    "orders",
+    "approvals",
+    "assets",
+    "catalog",
+    "pricing",
+    "usage",
+    "all",
+)
 
 ALLOW_ALL_ORGS = "ALLOW_ALL_ORGS"
 DEFAULT_TARGET_ORG_TOKEN = "DEFAULT_TARGET_ORG"
@@ -66,10 +113,15 @@ def get_runtime_config():
     return _RUNTIME_CONFIG or {}
 
 
-def resolve_enabled_tools(config, all_tool_names, action_tool_names):
-    """Return the set of tool names enabled given the active filter."""
+def resolve_enabled_tools(config, all_tool_names, action_tool_names, action_domains=None):
+    """Return the set of tool names enabled given the active filter.
+
+    action_domains: optional dict mapping action tool name -> domain string. Used to
+    resolve domain-aware toolsets (billing, orders, approvals, ...).
+    """
     toolsets = [t.lower() for t in (config.get("toolsets") or [])]
     explicit = list(config.get("tools") or [])
+    action_domains = action_domains or {}
 
     if not toolsets and not explicit:
         return set(all_tool_names)
@@ -88,6 +140,20 @@ def resolve_enabled_tools(config, all_tool_names, action_tool_names):
             enabled.update(DIAGNOSTICS_TOOLS)
         elif ts == "data":
             enabled.update(DATA_TOOLS)
+        elif ts == "context":
+            enabled.update(CONTEXT_TOOLS)
+        elif ts == "cpq_headless":
+            enabled.update(CPQ_HEADLESS_TOOLS)
+            enabled.update(GENERIC_ACTION_TOOLS)
+            for tool_name, domain in action_domains.items():
+                if domain in {"Salesforce Pricing", "Product Configurator"}:
+                    enabled.add(tool_name)
+        elif ts in DOMAIN_TOOLSETS:
+            wanted = DOMAIN_TOOLSETS[ts]
+            enabled.update(GENERIC_ACTION_TOOLS)
+            for tool_name, domain in action_domains.items():
+                if domain in wanted:
+                    enabled.add(tool_name)
     enabled.update(explicit)
     return enabled & set(all_tool_names)
 
