@@ -113,7 +113,53 @@ Example: only billing + diagnostics, plus the bootstrap context helpers:
 
 If neither flag nor env var is set, all tools are enabled (current default).
 
-## Multi-Org Allowlist
+### Recommended Profiles
+
+> **These profiles are optional context-window optimizations, not capability
+> boundaries.** The server can do everything its tools allow regardless of how
+> it is started. A profile only changes which schemas are advertised to the
+> client at `tools/list` time. The default (no `--toolsets`) is **full
+> coverage** — pick a profile only to shrink the LLM context when you know
+> the session is scoped to a specific area, and add `--tools <names>` to pull
+> in extra tools without changing profile.
+>
+> Anything not in the active profile is still reachable via two escape hatches
+> that we recommend keeping enabled:
+> 1. `salesforce_rest_request` (toolset `data`) — call any
+>    `/services/data` REST API, including Connect endpoints.
+> 2. `invoke_revenue_cloud_action` (toolset `actions`) — invoke any standard
+>    action by API name, even one not represented as a typed tool.
+>
+> If you are not sure whether a profile is hiding something you need, run with
+> the default (no `--toolsets`) and the LLM will see the full inventory.
+
+The profiles below are sized so that nothing the server *cannot* fall back to
+gets dropped: `data` and `diagnostics` are always recommended.
+
+| Profile name | `--toolsets` | What it is for | What it deliberately drops (still reachable via escape hatches) |
+|---|---|---|---|
+| Full (default) | *(omit the flag)* | Discovery sessions, exploratory work, agents that switch context. **Recommended when in doubt.** | nothing |
+| Telco lifecycle | `assets,orders,context,data,diagnostics` | MH-07 / MH-08 amend / cancel / renew / transfer flows on Asset+Order. | Billing, CPQ headless configurator, Approvals, Catalog inspection. |
+| Billing & Payments | `billing,context,data,diagnostics` | Invoicing, payment application, dunning support; v66 actions plus the v67 Billing license set. | Asset lifecycle, Orders orchestration, CPQ, Approvals. |
+| Quote-to-Cash | `orders,pricing,context,assets,data,diagnostics` | End-to-end Quote → Order → Asset → renewal. | Billing/Payments, Approvals, Headless Configurator. |
+| Catalog & Pricing | `catalog,pricing,data,diagnostics` | Read-mostly: product lookup, qualification, pricing context bootstrap. | Order/Asset mutations, Billing, Approvals. |
+| Approvals | `approvals,data,diagnostics` | Cancel / recall / review / override / reassign approval work items. | Everything else. |
+| Headless CPQ | `cpq_headless,context,data,diagnostics` | Configurator session over Connect REST + pricing context. | Asset lifecycle, Orders mutations, Billing. |
+| Read-only audit | `data,diagnostics` | SOQL/REST exploration + org readiness. No `actions/standard` invocation tools. | All mutation tools. To re-enable a single one without changing profile, add e.g. `--tools invoke_revenue_cloud_action` or `--tools createOrderFromQuote`. |
+
+A few pragmatic notes:
+
+- `core` is always on. `list_revenue_cloud_actions` and
+  `describe_revenue_cloud_action` work in every profile, so the LLM can see
+  what the **registry** knows about, even if a typed tool is hidden.
+- `diagnostics` adds `list_available_standard_actions`, the canonical way to
+  ask Salesforce *itself* which actions are exposed in the org. We recommend
+  keeping it on in every profile so the agent cannot mistake "tool not
+  registered" for "feature not available".
+- A profile is additive: missing one tool? `--tools createOrderFromQuote`
+  layers it on top of any profile.
+- The full registry is documented in the **Tool Coverage** section below; that
+  is the source of truth for what this server can do, not a profile.
 
 By default the server accepts any `target_org` (resolved per call from
 parameter, env var, or Salesforce CLI default). Restrict which orgs can be
