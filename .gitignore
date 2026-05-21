@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+.env
+.env.*
+!.env.example
+.sf/
+.sfdx/
+
+revenue_lifecycle_management_dev_guide.pdf
+revenue_lifecycle_management_dev_guide.txt
+image (2).png
+AUDIT.local.md
