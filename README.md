@@ -152,14 +152,21 @@ A few pragmatic notes:
 - `core` is always on. `list_revenue_cloud_actions` and
   `describe_revenue_cloud_action` work in every profile, so the LLM can see
   what the **registry** knows about, even if a typed tool is hidden.
-- `diagnostics` adds `list_available_standard_actions`, the canonical way to
-  ask Salesforce *itself* which actions are exposed in the org. We recommend
-  keeping it on in every profile so the agent cannot mistake "tool not
-  registered" for "feature not available".
+- `diagnostics` adds `list_available_standard_actions` and
+  `revenue_cloud_org_readiness`, the canonical way to ask Salesforce *itself*
+  which actions are exposed in the org. The readiness tool also segregates
+  actions that are missing because of the API version / Billing license
+  (`missing_v67_or_billing_actions`) from ones that are genuinely missing
+  for other reasons. We recommend keeping `diagnostics` on in every profile.
 - A profile is additive: missing one tool? `--tools createOrderFromQuote`
   layers it on top of any profile.
 - The full registry is documented in the **Tool Coverage** section below; that
   is the source of truth for what this server can do, not a profile.
+- Some Billing/Payments and freeze/unfreeze actions are tagged
+  `since: 67.0` in the registry: they require both API v67.0 (Summer '26+)
+  and a Salesforce Billing license. On older orgs they describe to 404 and
+  invoke to `INSUFFICIENT_ACCESS`. Run `revenue_cloud_org_readiness` to see
+  the exact set unavailable on the current target org.
 
 By default the server accepts any `target_org` (resolved per call from
 parameter, env var, or Salesforce CLI default). Restrict which orgs can be
@@ -233,20 +240,55 @@ Requires Salesforce Billing license + v67.0: `postDraftInvoice`,
 `createBillingSchedulesFromBillingTransaction`, `recoverBillingSchedules`.
 
 ### Context bootstrap (Connect REST)
-- `hydrate_pricing_context` — POST `/connect/core-pricing/pricing` to attach a
-  Revenue Cloud `ContextDefinition` to a Quote/Order and return its
-  `contextInstanceId` (use it to feed `runSalesforcePricing` and other tools
-  that fail with `NO_CONTEXT_RUNTIME_FOUND` on raw standard records).
-- `place_sales_transaction` — POST `/connect/rev/sales-transaction/actions/place`
-  to place + price + decompose a sales transaction in one call.
+
+These wrappers were validated against `/connect/*` endpoints and use the
+exact field names the Salesforce server expects. Pass IDs (not names),
+otherwise the API returns `JSON_PARSER_ERROR` on unrecognized fields.
+
+- `hydrate_pricing_context` — POST `/connect/core-pricing/pricing`. Required
+  inputs: `context_definition_id`, `context_mapping_id`, `pricing_procedure_id`,
+  `json_data_string`. The endpoint requires **IDs**: query
+  `SELECT Id, DeveloperName FROM ContextDefinition` and the matching
+  `ContextMapping` / `PricingProcedure` records first. Use it to obtain a
+  hydrated `contextId` to feed downstream tools that fail with
+  `NO_CONTEXT_RUNTIME_FOUND` on raw standard records.
+- `place_sales_transaction` — POST `/connect/rev/sales-transaction/actions/place`.
+  The endpoint accepts only a `contextDetails` object at the top level. The
+  wrapper takes `context_id` and builds `{"contextDetails":{"contextId": ...}}`.
+  Pass `body` to override entirely (advanced).
 - `assign_revenue_cloud_usage` — INSERT `AppUsageAssignment` to mark a record
   as `RevenueLifecycleManagement`. Required to unlock asset lifecycle (amend,
   cancel, transfer) on orders that were created without the RLM flag.
 
 ### Headless Configurator (CPQ)
-`cpq_configure`, `cpq_load_instance`, `cpq_save_instance`,
-`cpq_set_product_quantity`, `cpq_add_nodes`, `cpq_update_nodes`,
-`cpq_delete_nodes` — wrappers over `/connect/cpq/configurator/actions/*`.
+
+Wrappers over `/connect/cpq/configurator/actions/*`. All accept the same
+context fields: `transaction_id`, `transaction_line_id`, `record_id`,
+`correlation_id`. Use `body` to override entirely when you need to send
+the full payload (e.g. for `cpq_set_product_quantity` you typically pass
+`body` with `productId` / `quantity` / attributes).
+
+- `cpq_configure`, `cpq_load_instance`, `cpq_save_instance`,
+  `cpq_set_product_quantity`, `cpq_add_nodes`, `cpq_update_nodes`,
+  `cpq_delete_nodes`.
+
+### Standard Salesforce Approvals (not Revenue Cloud-native)
+
+The `cancelApprovalSubmission` / `recallApprovalSubmission` /
+`reviewApprovalWorkItem` / `overrideApprovalWorkItem` /
+`reassignApprovalWorkItem` tools target Revenue Cloud's own
+`ApprovalSubmission` (prefix `9j8`) and `ApprovalWorkItem` (`9jR`) records.
+
+For the platform-wide Approval Process (`ProcessInstanceWorkitem` prefix
+`04i`) use the REST escape hatch:
+
+```jsonc
+salesforce_rest_request({
+  "method": "POST",
+  "path": "process/approvals",
+  "body": {"requests": [{"actionType": "Approve", "contextId": "04i...", "comments": "ok"}]}
+})
+```
 
 ### Generic / diagnostics
 - `invoke_revenue_cloud_action` — invoke any Salesforce standard action with raw `inputs`.

@@ -140,23 +140,25 @@ def _all_tools():
         ),
         tool(
             "hydrate_pricing_context",
-            "Hydrate a Revenue Cloud pricing context for a Quote/Order via /connect/core-pricing/pricing. Returns a contextInstanceId usable by runSalesforcePricing and other tools.",
+            "Hydrate a Revenue Cloud pricing context via /connect/core-pricing/pricing. The endpoint requires four ID-based parameters (NOT names): contextDefinitionId, contextMappingId, pricingProcedureId, and jsonDataString. Returns the hydrated contextInstanceId usable by runSalesforcePricing.",
             base_salesforce_schema(
                 {
-                    "context_definition_name": {"type": "string", "description": "Context definition developer name."},
-                    "record_id": {"type": "string", "description": "Quote, Order, or other transaction record id to hydrate."},
-                    "pricing_procedure_name": {"type": "string", "description": "Optional pricing procedure to run during hydration."},
-                    "context_mapping_name": {"type": "string"},
-                    "additional_body": {"type": "object", "description": "Extra fields merged into the POST body verbatim."},
+                    "context_definition_id": {"type": "string", "description": "ContextDefinition Id (not name). Query: SELECT Id, DeveloperName FROM ContextDefinition."},
+                    "context_mapping_id": {"type": "string", "description": "ContextMapping Id (not name). Query: SELECT Id FROM ContextMapping WHERE ContextDefinitionId = '...'."},
+                    "pricing_procedure_id": {"type": "string", "description": "PricingProcedure Id (not name). Query: SELECT Id FROM PricingProcedure."},
+                    "json_data_string": {"type": "string", "description": "Pricing payload as a JSON string. Typical shape: '{\"recordId\":\"<Quote/Order Id>\"}'."},
+                    "additional_body": {"type": "object", "description": "Extra top-level fields merged into the POST body verbatim (advanced)."},
                 }
             ),
         ),
         tool(
             "place_sales_transaction",
-            "Invoke /connect/rev/sales-transaction/actions/place to create or update a sales transaction with full context (place + price + decompose) in one call.",
+            "Place a Revenue Cloud sales transaction via /connect/rev/sales-transaction/actions/place. The endpoint accepts ONLY a contextDetails object at the top level. Requires a hydrated contextId obtained from hydrate_pricing_context (or from any prior call that returned one).",
             base_salesforce_schema(
                 {
-                    "body": {"type": "object", "description": "Full request body for /connect/rev/sales-transaction/actions/place."},
+                    "context_id": {"type": "string", "description": "Hydrated context Id. Required."},
+                    "additional_context_details": {"type": "object", "description": "Extra fields merged into contextDetails (advanced)."},
+                    "body": {"type": "object", "description": "Escape hatch: full request body. If provided, overrides the structured fields above."},
                 }
             ),
         ),
@@ -175,38 +177,94 @@ def _all_tools():
         ),
         tool(
             "cpq_configure",
-            "Start a configurator session via /connect/cpq/configurator/actions/configure.",
-            base_salesforce_schema({"body": {"type": "object"}}),
+            "Start a configurator session via /connect/cpq/configurator/actions/configure. Requires a transaction or transaction-line context (transactionId / transactionLineId / recordId).",
+            base_salesforce_schema(
+                {
+                    "transaction_id": {"type": "string", "description": "Sales transaction Id (Quote, Order, or RC SalesTransaction)."},
+                    "transaction_line_id": {"type": "string", "description": "Specific transaction line Id when configuring a single line."},
+                    "record_id": {"type": "string", "description": "Generic record Id alternative when transaction_id/transaction_line_id are not applicable."},
+                    "correlation_id": {"type": "string", "description": "Optional correlation id for tracing."},
+                    "body": {"type": "object", "description": "Escape hatch: full request body. If provided, overrides the structured fields above."},
+                }
+            ),
         ),
         tool(
             "cpq_load_instance",
-            "Load a previously saved configurator instance via /connect/cpq/configurator/actions/load-instance.",
-            base_salesforce_schema({"body": {"type": "object"}}),
+            "Load a configurator instance via /connect/cpq/configurator/actions/load-instance. Same context fields as cpq_configure.",
+            base_salesforce_schema(
+                {
+                    "transaction_id": {"type": "string"},
+                    "transaction_line_id": {"type": "string"},
+                    "record_id": {"type": "string"},
+                    "correlation_id": {"type": "string"},
+                    "body": {"type": "object", "description": "Escape hatch full body."},
+                }
+            ),
         ),
         tool(
             "cpq_save_instance",
             "Save the current configurator instance via /connect/cpq/configurator/actions/save-instance.",
-            base_salesforce_schema({"body": {"type": "object"}}),
+            base_salesforce_schema(
+                {
+                    "transaction_id": {"type": "string"},
+                    "transaction_line_id": {"type": "string"},
+                    "record_id": {"type": "string"},
+                    "correlation_id": {"type": "string"},
+                    "body": {"type": "object", "description": "Escape hatch full body."},
+                }
+            ),
         ),
         tool(
             "cpq_set_product_quantity",
-            "Set product quantity on the current configurator instance via /connect/cpq/configurator/actions/set-product-quantity.",
-            base_salesforce_schema({"body": {"type": "object"}}),
+            "Set product quantity on the configurator instance via /connect/cpq/configurator/actions/set-product-quantity.",
+            base_salesforce_schema(
+                {
+                    "transaction_id": {"type": "string"},
+                    "transaction_line_id": {"type": "string"},
+                    "record_id": {"type": "string"},
+                    "correlation_id": {"type": "string"},
+                    "body": {"type": "object", "description": "Escape hatch full body. Pass the full payload (e.g. with productId, quantity, attributes) here."},
+                }
+            ),
         ),
         tool(
             "cpq_add_nodes",
-            "Add nodes (line items) on the current configurator instance via /connect/cpq/configurator/actions/add-nodes.",
-            base_salesforce_schema({"body": {"type": "object"}}),
+            "Add nodes (line items) on the configurator instance via /connect/cpq/configurator/actions/add-nodes.",
+            base_salesforce_schema(
+                {
+                    "transaction_id": {"type": "string"},
+                    "transaction_line_id": {"type": "string"},
+                    "record_id": {"type": "string"},
+                    "correlation_id": {"type": "string"},
+                    "body": {"type": "object", "description": "Escape hatch full body with the nodes payload."},
+                }
+            ),
         ),
         tool(
             "cpq_update_nodes",
-            "Update nodes on the current configurator instance via /connect/cpq/configurator/actions/update-nodes.",
-            base_salesforce_schema({"body": {"type": "object"}}),
+            "Update nodes on the configurator instance via /connect/cpq/configurator/actions/update-nodes.",
+            base_salesforce_schema(
+                {
+                    "transaction_id": {"type": "string"},
+                    "transaction_line_id": {"type": "string"},
+                    "record_id": {"type": "string"},
+                    "correlation_id": {"type": "string"},
+                    "body": {"type": "object", "description": "Escape hatch full body with the updated nodes payload."},
+                }
+            ),
         ),
         tool(
             "cpq_delete_nodes",
-            "Delete nodes from the current configurator instance via /connect/cpq/configurator/actions/delete-nodes.",
-            base_salesforce_schema({"body": {"type": "object"}}),
+            "Delete nodes from the configurator instance via /connect/cpq/configurator/actions/delete-nodes.",
+            base_salesforce_schema(
+                {
+                    "transaction_id": {"type": "string"},
+                    "transaction_line_id": {"type": "string"},
+                    "record_id": {"type": "string"},
+                    "correlation_id": {"type": "string"},
+                    "body": {"type": "object", "description": "Escape hatch full body with the node ids to delete."},
+                }
+            ),
         ),
     ]
     for name in action_names():
@@ -399,10 +457,23 @@ def call_tool(name, args, config=None):
                     "tool": action_name,
                     "api_name": meta["api_name"],
                     "domain": meta.get("domain"),
+                    "since": meta.get("since"),
                     "available_in_org": available,
                     "org_action": available_actions.get(meta["api_name"]),
                 }
             )
+
+        # Segregate v67-only registry entries that require Salesforce Billing
+        # license and/or API v67.0+. These are expected to be missing from
+        # orgs running v66 or without the relevant permission sets.
+        v67_missing = [
+            item for item in action_results
+            if not item["available_in_org"] and (item.get("since") or "") >= "67.0"
+        ]
+        truly_missing = [
+            item for item in action_results
+            if not item["available_in_org"] and (item.get("since") or "") < "67.0"
+        ]
 
         return {
             "ok": standard_actions.get("ok"),
@@ -414,7 +485,11 @@ def call_tool(name, args, config=None):
                 "registered_action_tools": len(action_results),
                 "available_action_tools": len([item for item in action_results if item["available_in_org"]]),
                 "missing_or_disabled_action_tools": len([item for item in action_results if not item["available_in_org"]]),
+                "missing_due_to_v67_or_billing_license": len(v67_missing),
+                "missing_other_reasons": len(truly_missing),
             },
+            "missing_v67_or_billing_actions": [item["tool"] for item in v67_missing],
+            "missing_other_actions": [item["tool"] for item in truly_missing],
             "actions": action_results,
             "user": query_soql(user_query, target_org=args.get("target_org"), api_version=args.get("api_version")),
             "assigned_revenue_cloud_permission_sets": query_soql(
@@ -446,14 +521,14 @@ def call_tool(name, args, config=None):
         )
     if name == "hydrate_pricing_context":
         body = dict(args.get("additional_body") or {})
-        if args.get("context_definition_name"):
-            body.setdefault("contextDefinitionName", args["context_definition_name"])
-        if args.get("record_id"):
-            body.setdefault("recordId", args["record_id"])
-        if args.get("pricing_procedure_name"):
-            body.setdefault("pricingProcedureName", args["pricing_procedure_name"])
-        if args.get("context_mapping_name"):
-            body.setdefault("contextMappingName", args["context_mapping_name"])
+        if args.get("context_definition_id"):
+            body.setdefault("contextDefinitionId", args["context_definition_id"])
+        if args.get("context_mapping_id"):
+            body.setdefault("contextMappingId", args["context_mapping_id"])
+        if args.get("pricing_procedure_id"):
+            body.setdefault("pricingProcedureId", args["pricing_procedure_id"])
+        if args.get("json_data_string") is not None:
+            body.setdefault("jsonDataString", args["json_data_string"])
         return rest_request(
             "POST",
             "connect/core-pricing/pricing",
@@ -462,10 +537,18 @@ def call_tool(name, args, config=None):
             api_version=args.get("api_version"),
         )
     if name == "place_sales_transaction":
+        explicit_body = args.get("body")
+        if explicit_body:
+            body = explicit_body
+        else:
+            ctx = dict(args.get("additional_context_details") or {})
+            if args.get("context_id"):
+                ctx.setdefault("contextId", args["context_id"])
+            body = {"contextDetails": ctx}
         return rest_request(
             "POST",
             "connect/rev/sales-transaction/actions/place",
-            body=args.get("body") or {},
+            body=body,
             target_org=args.get("target_org"),
             api_version=args.get("api_version"),
         )
@@ -481,10 +564,23 @@ def call_tool(name, args, config=None):
             api_version=args.get("api_version"),
         )
     if name in CPQ_CONFIGURATOR_ENDPOINTS:
+        explicit_body = args.get("body")
+        if explicit_body:
+            body = explicit_body
+        else:
+            body = {}
+            if args.get("transaction_id"):
+                body["transactionId"] = args["transaction_id"]
+            if args.get("transaction_line_id"):
+                body["transactionLineId"] = args["transaction_line_id"]
+            if args.get("record_id"):
+                body["recordId"] = args["record_id"]
+            if args.get("correlation_id"):
+                body["correlationId"] = args["correlation_id"]
         return rest_request(
             "POST",
             "connect/cpq/configurator/actions/" + CPQ_CONFIGURATOR_ENDPOINTS[name],
-            body=args.get("body") or {},
+            body=body,
             target_org=args.get("target_org"),
             api_version=args.get("api_version"),
         )
