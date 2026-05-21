@@ -42,9 +42,12 @@ def framed_rpc(proc, req):
     return msg["result"]
 
 
-def start_server():
+def start_server(extra_args=None):
+    cmd = [sys.executable, "-m", "revenuecloud_mcp.server"]
+    if extra_args:
+        cmd.extend(extra_args)
     return subprocess.Popen(
-        [sys.executable, "-m", "revenuecloud_mcp.server"],
+        cmd,
         text=True,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -105,7 +108,48 @@ def main():
     finally:
         proc.kill()
         proc.wait()
-    print("smoke ok: %d tools, line+framed transports" % len(tools))
+
+    proc = start_server(["--toolsets", "data", "--tools", "createContract"])
+    try:
+        rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        filtered = rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["tools"]
+        filtered_names = {t["name"] for t in filtered}
+        assert "soql_query" in filtered_names
+        assert "salesforce_rest_request" in filtered_names
+        assert "createContract" in filtered_names
+        assert "initiateRenewal" not in filtered_names
+        assert len(filtered_names) < len(tools)
+    finally:
+        proc.kill()
+        proc.wait()
+
+    proc = start_server(["--orgs", "sandbox-only"])
+    try:
+        rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        proc.stdin.write(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "soql_query",
+                        "arguments": {"target_org": "blocked-org", "query": "SELECT Id FROM User LIMIT 1"},
+                    },
+                }
+            )
+            + "\n"
+        )
+        proc.stdin.flush()
+        line = proc.stdout.readline()
+        msg = json.loads(line)
+        assert "error" in msg, "allowlist should reject blocked-org"
+        assert "allowlist" in msg["error"]["message"], msg["error"]["message"]
+    finally:
+        proc.kill()
+        proc.wait()
+
+    print("smoke ok: %d tools, line+framed transports, filter+allowlist" % len(tools))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import sys
 import traceback
 
 from .actions import ACTION_REGISTRY, CONTROL_FIELDS, TARGET_ORG_DESCRIPTION, action_input_schema, action_metadata, action_names
+from .config import load_config, resolve_enabled_tools, set_runtime_config
 from .salesforce import SalesforceError, describe_action, invoke_action, query_soql, rest_request
 
 
@@ -40,7 +41,18 @@ def base_salesforce_schema(extra):
     return {"type": "object", "properties": props, "additionalProperties": False}
 
 
-def tools_list():
+def tools_list(config=None):
+    config = config or {}
+    all_tools = _all_tools()
+    enabled = resolve_enabled_tools(
+        config,
+        all_tool_names=[t["name"] for t in all_tools],
+        action_tool_names=action_names(),
+    )
+    return [t for t in all_tools if t["name"] in enabled]
+
+
+def _all_tools():
     tools = [
         tool(
             "server_info",
@@ -154,8 +166,15 @@ def call_action_tool(name, args):
     return invoke_action(api_name, normalize_action_inputs(args), target_org=target_org, api_version=api_version)
 
 
-def call_tool(name, args):
+def call_tool(name, args, config=None):
     args = args or {}
+    config = config or {}
+    enabled_names = {
+        t["name"]
+        for t in tools_list(config)
+    }
+    if enabled_names and name not in enabled_names:
+        raise KeyError("Tool '%s' is not enabled by current toolset/tools filter." % name)
     if name == "server_info":
         return {
             "name": SERVER_NAME,
@@ -163,6 +182,11 @@ def call_tool(name, args):
             "defaults": {
                 "target_org": "SALESFORCE_TARGET_ORG or SF_TARGET_ORG",
                 "api_version": "target org default, fallback 65.0",
+            },
+            "filter": {
+                "toolsets": config.get("toolsets") or [],
+                "tools": config.get("tools") or [],
+                "orgs_allowlist": config.get("orgs") or [],
             },
             "sources": ["image (2).png", "revenue_lifecycle_management_dev_guide.pdf"],
             "notes": [
@@ -331,7 +355,7 @@ def call_tool(name, args):
     raise KeyError("Unknown tool: %s" % name)
 
 
-def handle(request):
+def handle(request, config=None):
     method = request.get("method")
     req_id = request.get("id")
     if method == "initialize":
@@ -345,10 +369,10 @@ def handle(request):
             },
         }
     if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools_list()}}
+        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools_list(config)}}
     if method == "tools/call":
         params = request.get("params") or {}
-        result = call_tool(params["name"], params.get("arguments") or {})
+        result = call_tool(params["name"], params.get("arguments") or {}, config=config)
         return {"jsonrpc": "2.0", "id": req_id, "result": {"content": text_content(result)}}
     if method and method.startswith("notifications/"):
         return None
@@ -416,12 +440,14 @@ def write_response(response, mode):
     sys.stdout.flush()
 
 
-def main():
+def main(argv=None):
+    config = load_config(argv if argv is not None else sys.argv[1:])
+    set_runtime_config(config)
     for request, mode in read_requests(sys.stdin.buffer):
         req_id = None
         try:
             req_id = request.get("id")
-            response = handle(request)
+            response = handle(request, config=config)
         except Exception as exc:
             response = error_response(req_id, exc)
         if response is not None:

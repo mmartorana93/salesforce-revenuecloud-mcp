@@ -76,6 +76,71 @@ Source checkout:
 The server does not hardcode a target org. Pass `target_org` in a tool call, or
 set `SALESFORCE_TARGET_ORG` or `SF_TARGET_ORG`.
 
+## Toolset Filtering
+
+By default the server registers all 28 tools. To reduce LLM context, restrict
+the tools that are exposed via flags or env vars.
+
+CLI flags (passed in `args`):
+
+- `--toolsets <list>`: comma-separated subset from `core`, `actions`,
+  `diagnostics`, `data`, `all`. `core` is always enabled. Specific toolsets
+  enable: `actions` -> all action tools + `invoke_revenue_cloud_action`,
+  `diagnostics` -> validation/readiness tools, `data` -> `soql_query` and
+  `salesforce_rest_request`.
+- `--tools <list>`: comma-separated tool names enabled in addition to any
+  toolsets. Useful to enable a single tool without its whole toolset.
+
+Environment variables (used when the matching CLI flag is omitted):
+
+- `REVENUECLOUD_TOOLSETS`
+- `REVENUECLOUD_TOOLS`
+
+Example: only data + diagnostics, plus the `createOrderFromQuote` action:
+
+```json
+{
+  "mcpServers": {
+    "revenuecloud": {
+      "command": "revenuecloud-mcp",
+      "args": ["--toolsets", "diagnostics,data", "--tools", "createOrderFromQuote"]
+    }
+  }
+}
+```
+
+If neither flag nor env var is set, all tools are enabled (current default).
+
+## Multi-Org Allowlist
+
+By default the server accepts any `target_org` (resolved per call from
+parameter, env var, or Salesforce CLI default). Restrict which orgs can be
+targeted by passing an allowlist.
+
+CLI flag:
+
+- `--orgs <list>`: comma-separated aliases/usernames. Two reserved tokens are
+  supported: `ALLOW_ALL_ORGS` (no restriction) and `DEFAULT_TARGET_ORG`
+  (allows the CLI default org when no explicit `target_org` is given).
+
+Environment variable: `REVENUECLOUD_ORGS`.
+
+Example: lock the server to two known sandboxes plus the CLI default:
+
+```json
+{
+  "mcpServers": {
+    "revenuecloud": {
+      "command": "revenuecloud-mcp",
+      "args": ["--orgs", "DEFAULT_TARGET_ORG,sandbox-uat,sandbox-dev"]
+    }
+  }
+}
+```
+
+Any tool call passing a `target_org` outside the allowlist is rejected before
+contacting Salesforce.
+
 If `api_version` is omitted, the server uses the API version reported by
 `sf org display` for the target org, then falls back to `65.0`. You can still
 force a version per call, for example `"api_version": "67.0"`.

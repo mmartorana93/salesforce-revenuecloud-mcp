@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 
 from .actions import DEFAULT_API_VERSION, DEFAULT_TARGET_ORG
+from .config import is_org_allowed, org_allowlist
 
 
 class SalesforceError(Exception):
@@ -20,10 +21,16 @@ def _clean_version(api_version):
 
 
 def resolve_target_org(target_org=None):
+    is_default = not target_org
     org = target_org or os.environ.get("SALESFORCE_TARGET_ORG") or os.environ.get("SF_TARGET_ORG") or DEFAULT_TARGET_ORG
     if not org:
         raise SalesforceError(
             "No Salesforce target org specified. Pass target_org or set SALESFORCE_TARGET_ORG/SF_TARGET_ORG."
+        )
+    allowlist = org_allowlist()
+    if allowlist and not is_org_allowed(org, allowlist, is_default=is_default):
+        raise SalesforceError(
+            "Target org '%s' is not in the allowlist (%s). Use --orgs / REVENUECLOUD_ORGS to permit it (DEFAULT_TARGET_ORG / ALLOW_ALL_ORGS tokens supported)." % (org, ", ".join(allowlist))
         )
     return org
 
